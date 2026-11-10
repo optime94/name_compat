@@ -2,75 +2,98 @@ const express = require("express");
 const app = express();
 app.use(express.json());
 
-/* ===== ① 한글을 자음/모음으로 쪼개는 준비물 ===== */
+/* ===== ① 준비물: 획수, 오행, 모음 ===== */
 const CHO  = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
 const JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ";
-// 각 자모의 획수
 const CHO_S  = [2,4,2,3,6,5,4,4,8,2,4,1,3,6,4,3,4,4,3];
 const JUNG_S = [2,3,3,4,2,3,3,4,2,4,5,3,3,2,4,5,3,3,1,2,1];
 const JONG_S = [0,2,4,4,2,5,5,3,5,7,9,9,7,9,9,8,4,4,6,2,4,1,3,4,3,4,4,3];
 
-// 오행(목화토금수) 분류
-const ELEM = { 목:"ㄱㄲㅋ", 화:"ㄴㄷㄸㄹㅌ", 토:"ㅇㅎ", 금:"ㅅㅆㅈㅉㅊ", 수:"ㅁㅂㅃㅍ" };
-const ORDER = ["목","화","토","금","수"];
-const YANG = "ㅏㅐㅑㅒㅗㅘㅙㅚㅛ", YIN = "ㅓㅔㅕㅖㅜㅝㅞㅟㅠ";
+const ELEM = { 목: "ㄱㄲㅋ", 화: "ㄴㄷㄸㄹㅌ", 토: "ㅇㅎ", 금: "ㅅㅆㅈㅉㅊ", 수: "ㅁㅂㅃㅍ" };
+const ORDER = ["목", "화", "토", "금", "수"];
+const YANG = "ㅏㅐㅑㅒㅗㅘㅙㅚㅛ";
+const YIN = "ㅓㅔㅕㅖㅜㅝㅞㅟㅠ";
 
-/* ===== ② 글자 하나를 초성/중성/종성으로 분해 ===== */
+/* ===== ② 글자 분해 ===== */
 function decompose(ch) {
   const c = ch.charCodeAt(0) - 0xAC00;
   return { cho: Math.floor(c / 588), jung: Math.floor((c % 588) / 28), jong: c % 28 };
 }
-const strokes = ch => { const d = decompose(ch); return CHO_S[d.cho] + JUNG_S[d.jung] + JONG_S[d.jong]; };
-const elemOf = ch => {
+
+function strokes(ch) {
+  const d = decompose(ch);
+  return CHO_S[d.cho] + JUNG_S[d.jung] + JONG_S[d.jong];
+}
+
+function elemOf(ch) {
   const c = CHO[decompose(ch).cho];
   return Object.keys(ELEM).find(k => ELEM[k].includes(c)) || "토";
-};
-const polarity = ch => {
-  const j = JUNG[decompose(ch).jung];
-  return YANG.includes(j) ? "양" : YIN.includes(j) ? "음" : "중";
-};
+}
 
-/* ===== ③ 세 가지 점수 계산 ===== */
-// (가) 획수 점수: 두 이름의 획수를 번갈아 늘어놓고 이웃끼리 더해 줄여간다
+function polarity(ch) {
+  const j = JUNG[decompose(ch).jung];
+  if (YANG.includes(j)) return "양";
+  if (YIN.includes(j)) return "음";
+  return "중";
+}
+
+/* ===== ③ 점수 계산 ===== */
 function strokeScore(a, b) {
-  const sa = [...a].map(strokes), sb = [...b].map(strokes), seq = [];
+  const sa = [...a].map(strokes);
+  const sb = [...b].map(strokes);
+  const seq = [];
   for (let i = 0; i < Math.max(sa.length, sb.length); i++) {
     if (i < sa.length) seq.push(sa[i]);
     if (i < sb.length) seq.push(sb[i]);
   }
   let cur = seq;
-  while (cur.length > 2) cur = cur.slice(1).map((v, i) => (cur[i] + v) % 10);
+  while (cur.length > 2) {
+    const prev = cur;
+    cur = prev.slice(1).map((v, i) => (prev[i] + v) % 10);
+  }
   const s = cur[0] * 10 + cur[1];
   return s === 0 ? 100 : s;
 }
-// (나) 오행 점수: 상생이면 높게, 상극이면 낮게
+
 function elemPair(x, y) {
   const d = (ORDER.indexOf(y) - ORDER.indexOf(x) + 5) % 5;
-  return d === 0 ? 70 : (d === 1 || d === 4) ? 90 : 40;
+  if (d === 0) return 70;
+  if (d === 1 || d === 4) return 90;
+  return 40;
 }
-// (다) 모음 점수: 양과 음이 만나면 높게
+
 function vowelPair(x, y) {
   if (x === "중" || y === "중") return 75;
   return x !== y ? 90 : 65;
 }
-const crossAvg = (a, b, f, g) => {
-  let sum = 0, n = 0;
-  for (const p of a) for (const q of b) { sum += g(f(p), f(q)); n++; }
-  return Math.round(sum / n);
-};
 
-/* ===== ④ 최종 합산 ===== */
+function crossAvg(a, b, f, g) {
+  let sum = 0;
+  let n = 0;
+  for (const p of a) {
+    for (const q of b) {
+      sum += g(f(p), f(q));
+      n++;
+    }
+  }
+  return Math.round(sum / n);
+}
+
 function compat(n1, n2) {
-  const [a, b] = [n1, n2].sort(); // 순서를 바꿔도 같은 결과가 나오게
+  const [a, b] = [n1, n2].sort();
   const st = strokeScore(a, b);
   const el = crossAvg([...a], [...b], elemOf, elemPair);
   const vw = crossAvg([...a], [...b], polarity, vowelPair);
   const score = Math.round(st * 0.5 + el * 0.3 + vw * 0.2);
-  const tier = score >= 90 ? "S" : score >= 75 ? "A" : score >= 60 ? "B" : score >= 45 ? "C" : "D";
+  let tier = "D";
+  if (score >= 90) tier = "S";
+  else if (score >= 75) tier = "A";
+  else if (score >= 60) tier = "B";
+  else if (score >= 45) tier = "C";
   return { names: [a, b], score, tier, stroke: st, element: el, vowel: vw };
 }
 
-/* ===== ⑤ 등급별 한 줄 평 ===== */
+/* ===== ④ 등급별 한 줄 평 (랜덤) ===== */
 const MSG = {
   S: [
     "말 안 해도 통하는 환상의 짝꿍!",
@@ -100,51 +123,68 @@ const MSG = {
   ],
 };
 
-// 배열에서 하나를 무작위로 뽑는 함수
-const pick = (arr, seed = "") => {
-  let h = 0;
-  for (const ch of seed) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return arr[h % arr.length];
-};
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
 
-/* ===== ⑥ 주소(엔드포인트) 만들기 ===== */
-// 브라우저로 바로 확인해 볼 수 있는 주소
+function validName(s) {
+  return /^[가-힣]{1,5}$/.test(s || "");
+}
+
+/* ===== ⑤ 주소(엔드포인트) ===== */
+// 브라우저 확인용
 app.get("/v1/compat", (req, res) => {
   const { a, b } = req.query;
-  if (!validName(a) || !validName(b))
+  if (!validName(a) || !validName(b)) {
     return res.status(400).json({ error: "INVALID_NAME", detail: "한글 1~5자만 입력할 수 있어요" });
+  }
   res.json(compat(a, b));
 });
 
-// 카카오 오픈빌더가 호출하는 주소
+// 카카오 오픈빌더용
 app.post("/skill/compat", (req, res) => {
-  if (process.env.API_KEY && req.get("x-api-key") !== process.env.API_KEY)
+  if (process.env.API_KEY && req.get("x-api-key") !== process.env.API_KEY) {
     return res.sendStatus(401);
+  }
 
-  const p = req.body?.action?.params || {};
-let a = p.a, b = p.b;
-if (!a || !b) {
-  const src = (p.names || req.body?.userRequest?.utterance || "").replace(/궁합/g, "");
-  [a, b] = src.match(/[가-힣]{1,5}/g) || [];
-}
+  const p = (req.body && req.body.action && req.body.action.params) || {};
+  let a = p.a;
+  let b = p.b;
 
-  const text = !validName(a) || !validName(b)
-    ? "이름 두 개를 알려주세요!\n예) 철수 영희"
-    : (() => {
-        const r = compat(a, b);
-        return `💘 ${a} ♥ ${b} 궁합 💘\n총점: ${r.score}점\n${pick(MSG[r.tier], r.names.join(""))}\n\n` +
-       `🔢 획수 궁합 ${r.stroke}%\n🔥 오행 케미 ${r.element}%\n🗣 모음 조화 ${r.vowel}%`;
-      })();
+  if (!a || !b) {
+    const utt = (req.body && req.body.userRequest && req.body.userRequest.utterance) || "";
+    const src = String(p.names || utt).replace(/궁합/g, "");
+    const found = src.match(/[가-힣]{1,5}/g) || [];
+    a = found[0];
+    b = found[1];
+  }
+
+  let text;
+  if (!validName(a) || !validName(b)) {
+    text = "이름 두 개를 알려주세요!\n예) 철수 영희";
+  } else {
+    const r = compat(a, b);
+    text =
+      `💘 ${a} ♥ ${b} 궁합 💘\n` +
+      `총점: ${r.score}점\n` +
+      `${pick(MSG[r.tier])}\n\n` +
+      `🔢 획수 궁합 ${r.stroke}%\n` +
+      `🔥 오행 케미 ${r.element}%\n` +
+      `🗣 모음 조화 ${r.vowel}%`;
+  }
 
   res.json({
-  version: "2.0",
-  template: {
-    outputs: [{ simpleText: { text } }],
-    quickReplies: [{ label: "다른 궁합 보기", action: "message", messageText: "궁합 봐줘" }],
-  },
+    version: "2.0",
+    template: {
+      outputs: [{ simpleText: { text: text } }],
+      quickReplies: [
+        { label: "다른 궁합 보기", action: "message", messageText: "궁합 봐줘" },
+      ],
+    },
+  });
 });
 
-// 서버가 살아있는지 확인하는 주소
+// 서버 확인용
 app.get("/health", (req, res) => res.send("ok"));
 
 app.listen(process.env.PORT || 3000, () => console.log("서버 시작!"));
