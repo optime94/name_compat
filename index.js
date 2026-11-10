@@ -122,11 +122,11 @@ app.post("/skill/compat", (req, res) => {
     return res.sendStatus(401);
 
   const p = req.body?.action?.params || {};
-  let a = p.a, b = p.b;
-  if (!a || !b) { // 파라미터가 없으면 사용자가 친 문장에서 이름을 뽑는다
-    const utt = (req.body?.userRequest?.utterance || "").replace(/궁합/g, "");
-    [a, b] = utt.match(/[가-힣]{1,5}/g) || [];
-  }
+let a = p.a, b = p.b;
+if (!a || !b) {
+  const src = (p.names || req.body?.userRequest?.utterance || "").replace(/궁합/g, "");
+  [a, b] = src.match(/[가-힣]{1,5}/g) || [];
+}
 
   const text = !validName(a) || !validName(b)
     ? "이름 두 개를 알려주세요!\n예) 철수 영희"
@@ -136,7 +136,12 @@ app.post("/skill/compat", (req, res) => {
        `🔢 획수 궁합 ${r.stroke}%\n🔥 오행 케미 ${r.element}%\n🗣 모음 조화 ${r.vowel}%`;
       })();
 
-  res.json({ version: "2.0", template: { outputs: [{ simpleText: { text } }] } });
+  res.json({
+  version: "2.0",
+  template: {
+    outputs: [{ simpleText: { text } }],
+    quickReplies: [{ label: "다른 궁합 보기", action: "message", messageText: "궁합 봐줘" }],
+  },
 });
 
 // 서버가 살아있는지 확인하는 주소
